@@ -5,17 +5,14 @@ import typing as tp
 
 from typing_extensions import Self
 
-from .field import UMLField
+from .field import UMLField, create_uml_field, _BaseUMLField
 from erd_converter.base import BaseTable, Table
 
 
 @dataclasses.dataclass
 class UMLTable(BaseTable):
     name: str
-    fields: list[UMLField] = dataclasses.field(default_factory=lambda: [])
-
-    def to_table(self) -> Table:
-        return Table(name=self.name, fields=[field.to_field() for field in self.fields])
+    fields: list[_BaseUMLField] = dataclasses.field(default_factory=lambda: [])
 
     @classmethod
     def from_table(cls, table: Table) -> Self:
@@ -33,5 +30,5 @@ class UMLTable(BaseTable):
             line = line.strip()
             if line == '}':                
                 return table
-            field = UMLField.from_str(line)
+            field = create_uml_field(line)
             table.fields.append(field)
