@@ -1,21 +1,20 @@
-from erd_converter.field import UMLField
+from __future__ import annotations
+
+import pytest
+
+from erd_converter.uml.field import UMLIntegerField, create_uml_field, UMLVarcharField, UMLForeignKeyField
+from erd_converter.peewee.field import PeeweeIntegerField
 
 
-def test_creating_uml_field_from_str():
-    line = 'id int [pk]'
-    res = UMLField.from_str(line)
-    assert isinstance(res, UMLField)
-    assert res.name == 'id'
-    assert res.type == 'int'
-    assert res.primary_key
-    assert not res.nullable
-
-
-def test_creating_uml_field_from_str_2():
-    line = 'name varchar'
-    res = UMLField.from_str(line)
-    assert isinstance(res, UMLField)
-    assert res.name == 'name'
-    assert res.type == 'varchar'
-    assert not res.primary_key
-    assert not res.nullable
+@pytest.mark.parametrize(
+    argnames=['inp', 'out'],
+    argvalues=[
+        ('id int [pk]', 'id = AutoField()'),
+        ('foo int [null]', 'foo = IntegerField(null=True)'),
+        ('foo int [not null]', 'foo = IntegerField()'),
+    ],
+)
+def test_convert_uml_field_to_peewee(inp, out):
+    field = create_uml_field(inp).to_field()
+    peewee_field = PeeweeIntegerField.from_field(field)
+    assert str(peewee_field) == out
