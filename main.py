@@ -5,8 +5,8 @@ from pathlib import Path
 
 import typer
 
-from erd_converter.table import PeeweeTable
-from erd_converter.iterators import UMLIterator
+from erd_converter.peewee.table import PeeweeTable
+from erd_converter.uml.iterator import UMLIterator
 
 
 def iterate_tables_from_uml_file(file: Path) -> tp.Iterator[str] :
