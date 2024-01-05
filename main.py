@@ -16,8 +16,12 @@ def iterate_tables_from_uml_file(file: Path) -> tp.Iterator[str] :
             yield str(peewee_table)
     
 
-def main(file: Path = typer.Option(..., exists=True, dir_okay=False, readable=True)):
-    with open('mymodels.py', 'w') as wf:
+def main(
+    file: Path = typer.Option(..., exists=True, dir_okay=False, readable=True),
+    res_file: Path = typer.Option(..., exists=False),
+) -> None:
+
+    with open(res_file, 'w') as wf:
         wf.writelines(iterate_tables_from_uml_file(file))
 
 
