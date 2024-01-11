@@ -6,7 +6,9 @@ import re
 import typing as tp
 
 from typing_extensions import Self
-from erd_converter.base import BaseField, Field, IntegerField, VarcharField
+from erd_converter import base as bf
+
+from .utils import get_data_type, get_nullable
 
 
 FIELD_PATTERN = re.compile(r'^\s*([a-zA-Z_]\w*)\s+(\w+(?:\(\d+\))?(?:\[\w+\])?)\s*(?:\[(.*?)\])?\s*$')
@@ -15,19 +17,8 @@ FIELD_PATTERN = re.compile(r'^\s*([a-zA-Z_]\w*)\s+(\w+(?:\(\d+\))?(?:\[\w+\])?)\
 T = tp.TypeVar('T')
 
 
-class _BaseUMLField(BaseField[T]):
-
-    @abc.abstractclassmethod
-    def from_parsed_str(cls, name: str, data: str, options: str) -> Self:
-        ...
-
-
-def get_nullable(options: list[str]) -> bool:
-    if 'null' in options:
-        return True
-    if 'not null' in options:
-        return False
-    return False
+class UMLField(bf.BaseField[T]):
+    pass
 
 
 DEFAULT_VARCHAR_SIZE = 256
@@ -42,14 +33,21 @@ def parse_size(data: str) -> int:
 
 
 @dataclasses.dataclass
-class UMLVarcharField(_BaseUMLField[VarcharField]):
+class UMLVarcharField(UMLField[bf.Varchar]):
     name: str
     size: int
     primary_key: bool = False
     nullable: bool = False
 
     @classmethod
-    def from_parsed_str(cls, name: str, data: str, options: str | None) -> Self:
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+        
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, data, options = match.groups()
+    
         size = parse_size(data)
 
         if not options:
@@ -70,17 +68,24 @@ class UMLVarcharField(_BaseUMLField[VarcharField]):
             options = f' [{options}]'
 
         size = '' if self.size == 256 else f'({self.size})' 
-        return f'{self.name} {self.type}{size}{options}'
+        return f'{self.name} varchar{size}{options}'
 
 
 @dataclasses.dataclass
-class UMLIntegerField(_BaseUMLField[IntegerField]):
+class UMLIntegerField(UMLField[bf.Integer]):
     name: str
     primary_key: bool = False
     nullable: bool = False
 
     @classmethod
-    def from_parsed_str(cls, name: str, options: str | None) -> Self:
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+        
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, options = match.groups()
+    
         if options is None:
             return cls(name)
 
@@ -102,21 +107,26 @@ class UMLIntegerField(_BaseUMLField[IntegerField]):
 
 
 @dataclasses.dataclass
-class UMLBooleanField(_BaseUMLField[IntegerField]):
+class UMLBooleanField(UMLField[bf.Boolean]):
     name: str
-    primary_key: bool = False
     nullable: bool = False
 
     @classmethod
-    def from_parsed_str(cls, name: str, options: str | None) -> Self:
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+        
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, options = match.groups()
+    
         if options is None:
             return cls(name)
 
         options_split = [x.lower() for x in options.split(',')]
-        primary_key = 'pk' in options_split
         nullable = get_nullable(options_split)
 
-        return cls(name=name, primary_key=primary_key, nullable=nullable)
+        return cls(name=name, nullable=nullable)
 
     def __str__(self) -> str:
         options = ''
@@ -148,29 +158,32 @@ def get_ref(options: list[str]) -> tuple[str, str, str]:
 
 
 @dataclasses.dataclass
-class UMLForeignKeyField(_BaseUMLField):
+class UMLForeignKeyField(UMLField[bf.ForeignKeyField]):
     name: str
     type: str
     ref_table: str
     ref_operator: str
     ref_field: str
-    primary_key: bool = False
     nullable: bool = False
 
     @classmethod
-    def from_parsed_str(cls, name: str, data: str, options: str) -> Self:
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+        
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, data_type, options = match.groups()
+        
         options_split = [x.lower() for x in options.split(', ')]
-        print(options)
-        primary_key = 'pk' in options_split
         nullable = get_nullable(options_split)
         ref_table, ref_field, ref_operator = get_ref(options_split)
         return cls(
             name=name,
-            type=data,
+            type=data_type,
             ref_table=ref_table,
             ref_operator=ref_operator,
             ref_field=ref_field,
-            primary_key=primary_key,
             nullable=nullable,
         )
 
@@ -178,86 +191,156 @@ class UMLForeignKeyField(_BaseUMLField):
         return ''
 
 
-class UMLArrayField(_BaseUMLField):
+ARRAY_FIELD_PATTERN = re.compile(r'^\s*(?P<variable_name>[a-zA-Z_]\w*)\s+(?P<data_type>\w+(?:\(\d+\))?)\s*(?:\[(?P<values>.*?)\])?\s*(?:\[(?P<options>[\w\s,]+)\])?\s*$')
+
+
+@dataclasses.dataclass
+class UMLArrayField(UMLField[bf.Array]):
+    name: str
+    subfield: UMLIntegerField | UMLBooleanField | UMLVarcharField 
+    field_convert = {
+        bf.Integer: UMLIntegerField,
+        bf.Varchar: UMLVarcharField,
+        bf.Boolean: UMLBooleanField,
+    }
+
     @classmethod
-    def from_parsed_str(cls, name, data, options) -> Self:
-        ...
+    def __convert_field(cls, field: bf.Integer | bf.Varchar | bf.Boolean) -> UMLIntegerField | UMLBooleanField | UMLVarcharField:
+        return cls.field_convert[field.__class__].from_field(field)
 
+    def to_field(self) -> bf.Array:
+        subfield = self.subfield.to_field()
+        return bf.Array(name=self.name, subfield=subfield)
 
-class UMLJsonField(_BaseUMLField):
     @classmethod
-    def from_parsed_str(cls, name, data, options) -> Self:
-        ...
+    def from_field(cls, field: bf.Array) -> Self:
+        subfield = cls.__convert_field(field.subfield)
+        return cls(name=field.name, subfield=subfield)
 
+    @classmethod
+    def from_str(cls, line: str) -> Self:
+        match = re.search(ARRAY_FIELD_PATTERN, line)
+        
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, subfield, options = match.groups()
+
+        subfield_ = create_uml_field(f'default {subfield}')
+
+        return cls(name=name, subfield=subfield_)
+
+
+@dataclasses.dataclass
+class UMLJsonField(UMLField[bf.Json]):
+    name: str
+    nullable: bool = False
+
+    @classmethod
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, options = match.groups()
+    
+        if options is None:
+            return cls(name)
+
+        options_split = [x.lower() for x in options.split(',')]
+        nullable = get_nullable(options_split)
+
+        return cls(name=name, nullable=nullable)
+
+
+@dataclasses.dataclass
+class UMLDateTimeField(UMLField[bf.DateTime]):
+    name: str
+    nullable: bool = False
+
+    @classmethod
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, options = match.groups()
+    
+        if options is None:
+            return cls(name)
+
+        options_split = [x.lower() for x in options.split(',')]
+        nullable = get_nullable(options_split)
+
+        return cls(name=name, nullable=nullable)
+
+
+@dataclasses.dataclass
+class UMLFloatField(UMLField[bf.Float]):
+    name: str
+    nullable: bool = False
+
+    @classmethod
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, options = match.groups()
+    
+        if options is None:
+            return cls(name)
+
+        options_split = [x.lower() for x in options.split(',')]
+        nullable = get_nullable(options_split)
+
+        return cls(name=name, nullable=nullable)
+
+
+@dataclasses.dataclass
+class UMLBytesField(UMLField[bf.Bytes]):
+    name: str
+    nullable: bool = False
+
+    @classmethod
+    def from_str(cls, line: str) -> Self:
+        match = re.search(FIELD_PATTERN, line)
+
+        if not match:
+            raise ValueError(f'Invalid line {line}')
+
+        name, _, options = match.groups()
+    
+        if options is None:
+            return cls(name)
+
+        options_split = [x.lower() for x in options.split(',')]
+        nullable = get_nullable(options_split)
+
+        return cls(name=name, nullable=nullable)
+
+
+DATA_TYPES : dict[str, UMLField] = {
+    'varchar': UMLVarcharField,
+    'int': UMLIntegerField,
+    'array': UMLArrayField,
+    'json': UMLJsonField,
+    'fk': UMLForeignKeyField,
+    'boolean': UMLBooleanField,
+    'datetime': UMLDateTimeField,
+    'float': UMLFloatField,
+    'bytea': UMLBytesField,
+}
 
 
 def create_uml_field(line: str):
-    field_matches = re.finditer(FIELD_PATTERN, line)
+    data_type = get_data_type(line)
+
     try:
-        match = next(field_matches)
-    except StopIteration:
-        raise ValueError(f'Invalid line {line}')
-    
-    name, data, options = match.groups()
-
-    if options is not None and 'ref:' in options:
-        return UMLForeignKeyField.from_parsed_str(name, data, options)
-
-    if data.startswith('int'):
-        return UMLIntegerField.from_parsed_str(name, options)
-
-    if data.startswith('boolean'):
-        return UMLBooleanField.from_parsed_str(name, options)
-
-    if data.startswith('varchar'):
-        return UMLVarcharField.from_parsed_str(name, data, options)
-
-    if data.startswith('array'):
-        return UMLArrayField.from_parsed_str(name, data, options)
-
-    if data.startswith('json'):
-        return UMLJsonField.from_parsed_str()
-    raise NotImplementedError()
-    # if not options:
-    #     return cls(name=name, type=data)
-
-    # options_split = [x.lower() for x in options.split(',')]
-    # primary_key = 'pk' in options_split
-    # nullable = 'null' in options_split
-
-    # return cls(
-    #     name=name,
-    #     type=data_type,
-    #     size=field_size,
-    #     primary_key=primary_key,
-    #     nullable=nullable,
-    #     reference=reference,
-    # )
-
-
-class UMLField(BaseField):
-    name: str
-    type: str
-    size: int | None = None
-    primary_key: bool = False
-    nullable: bool = False
-    reference: str | None = None
-
-    def to_field(self) -> Field:
-        return Field(
-            name=self.name,
-            type=self.type,
-            primary_key=self.primary_key,
-            nullable=self.nullable,
-            reference=self.reference,
-        )
-
-    @classmethod
-    def from_field(cls, field: Field) -> Self:
-        return cls(
-            name=field.name,
-            type=field.type,
-            primary_key=field.primary_key,
-            nullable=field.nullable,
-            reference=field.reference,
-        )
+        dtype = DATA_TYPES[data_type]
+    except KeyError:
+        raise ValueError(f'Cannot find datatype `{data_type}`')
+    return dtype.from_str(line)

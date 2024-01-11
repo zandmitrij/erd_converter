@@ -5,7 +5,7 @@ from erd_converter.table import UMLTable
 
 
 def test_iterator():
-    filepath = Path(__file__).parent / 'experiment.uml'
+    filepath = Path(__file__).parent / 'experiment.dbml'
 
     with UMLIterator(filepath) as uml:
         table = next(uml)

@@ -1,33 +1,31 @@
 from __future__ import annotations
 
 import abc
+import typing as tp
 
 from typing_extensions import Self
 
 from .table import Table
+from .base_field import BaseField
+from .field import Field
+
+
+T = tp.TypeVar('T', bound=Field)
+F = tp.TypeVar('F', bound=BaseField)
 
 
 class BaseTable(abc.ABC):
     name: str
-    fields: list
+    fields: list[F]
+    field_convert: tp.ClassVar[dict[type[T], type[F]]]
 
     def to_table(self) -> Table:
-        """Abstract method to implement to get Field instance from your custom class
-
-        Returns:
-            Field: field class instance
-        """
         return Table(name=self.name, fields=[field.to_field() for field in self.fields])
 
+    @classmethod
+    def __convert_field(cls, field: Field) -> F:
+        return cls.field_convert[field.__class__].from_field(field)
 
-    @abc.abstractclassmethod
-    def from_table(field: Table) -> Self:
-        """Abstract method to implement to get your custom class from Field instance
-
-        Args:
-            field (Field): field class instance
-
-        Returns:
-            Self: your class
-        """
-        ...
+    @classmethod
+    def from_table(cls, table: Table) -> Self:
+        return cls(name=table.name, fields=[cls.__convert_field(field) for field in table.fields])

@@ -13,15 +13,61 @@ class Field:
 
 
 @dataclasses.dataclass
-class IntegerField:
+class Integer:
     name: str
     primary_key: bool = False
     nullable: bool = False
 
 
 @dataclasses.dataclass
-class VarcharField:
+class Varchar:
     name: str
     size: int
     primary_key: bool = False
+    nullable: bool = False
+
+
+@dataclasses.dataclass
+class ForeignKeyField:
+    name: str
+    type: str
+    ref_table: str
+    ref_operator: str
+    ref_field: str
+    nullable: bool = False
+
+
+@dataclasses.dataclass
+class Boolean:
+    name: str
+    nullable: bool = False
+
+
+@dataclasses.dataclass
+class Float:
+    name: str
+    nullable: bool = False
+
+
+@dataclasses.dataclass
+class Bytes:
+    name: str
+    nullable: bool = False
+
+
+@dataclasses.dataclass
+class DateTime:
+    name: str
+    nullable: bool = False
+
+
+@dataclasses.dataclass
+class Array:
+    name: str
+    subfield: Integer | Boolean | Varchar
+
+
+@dataclasses.dataclass
+class Json:
+    name: str
     nullable: bool = False

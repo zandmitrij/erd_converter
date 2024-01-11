@@ -28,7 +28,7 @@ class UMLIterator(tp.Iterator[UMLTable]):
                 line = next(self.__file)
             except StopIteration:
                 raise StopIteration()
-            if not line.strip() or line.startswith('//'):
+            if not line.strip() or line.strip().startswith('//'):
                 continue
             elif line.strip() == '}':
                 lines.append(line)

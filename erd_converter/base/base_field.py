@@ -16,13 +16,14 @@ class BaseField(abc.ABC, tp.Generic[T]):
     def model_type(cls) -> type[T]:
         return tp.get_args(cls.__orig_bases__[0])[0]
 
-    # @abc.abstractmethod
     def to_field(self) -> T:
-        """Abstract method to implement to get Field instance from your custom class"""
         model_type = self.model_type()
         return model_type(**dataclasses.asdict(self))
 
     @classmethod
     def from_field(cls, field: T) -> Self:
-        """Abstract method to implement to get your custom class from Field instance"""
         return cls(**dataclasses.asdict(field))
+
+    @abc.abstractclassmethod
+    def from_str(cls, line: str) -> Self:
+        ...
